@@ -2,29 +2,30 @@
 /**
  * Upgrade Shell
  *
- * PHP 5
- *
  * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  * @link          http://cakephp.org CakePHP(tm) Project
  * @package       Cake.Console.Command
  * @since         CakePHP(tm) v 2.0
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
+App::uses('AppShell', 'Console/Command');
 App::uses('Folder', 'Utility');
+App::uses('CakePlugin', 'Core');
 
 /**
  * A shell class to help developers upgrade applications to CakePHP 2.0
  *
  * @package       Cake.Console.Command
  */
-class UpgradeShell extends Shell {
+class UpgradeShell extends AppShell {
 
 /**
  * Files
@@ -82,7 +83,7 @@ class UpgradeShell extends Shell {
  * @return void
  */
 	public function all() {
-		foreach($this->OptionParser->subcommands() as $command) {
+		foreach ($this->OptionParser->subcommands() as $command) {
 			$name = $command->name();
 			if ($name === 'all') {
 				continue;
@@ -102,7 +103,7 @@ class UpgradeShell extends Shell {
 	public function tests() {
 		$this->_paths = array(APP . 'tests' . DS);
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = App::pluginPath($this->params['plugin']) . 'tests' . DS;
+			$this->_paths = array(CakePlugin::path($this->params['plugin']) . 'tests' . DS);
 		}
 		$patterns = array(
 			array(
@@ -128,35 +129,41 @@ class UpgradeShell extends Shell {
 		$cwd = getcwd();
 
 		if (!empty($this->params['plugin'])) {
-			chdir(App::pluginPath($this->params['plugin']));
+			chdir(CakePlugin::path($this->params['plugin']));
 		}
 
 		if (is_dir('plugins')) {
 			$Folder = new Folder('plugins');
 			list($plugins) = $Folder->read();
-			foreach($plugins as $plugin) {
+			foreach ($plugins as $plugin) {
 				chdir($cwd . DS . 'plugins' . DS . $plugin);
+				$this->out(__d('cake_console', 'Upgrading locations for plugin %s', $plugin));
 				$this->locations();
 			}
 			$this->_files = array();
 			chdir($cwd);
+			$this->out(__d('cake_console', 'Upgrading locations for app directory'));
 		}
-
-		$this->_moveViewFiles();
-
 		$moves = array(
+			'config' => 'Config',
+			'Config' . DS . 'schema' => 'Config' . DS . 'Schema',
 			'libs' => 'Lib',
 			'tests' => 'Test',
+			'views' => 'View',
+			'models' => 'Model',
+			'Model' . DS . 'behaviors' => 'Model' . DS . 'Behavior',
+			'Model' . DS . 'datasources' => 'Model' . DS . 'Datasource',
 			'Test' . DS . 'cases' => 'Test' . DS . 'Case',
 			'Test' . DS . 'fixtures' => 'Test' . DS . 'Fixture',
 			'vendors' . DS . 'shells' . DS . 'templates' => 'Console' . DS . 'Templates',
 		);
-		foreach($moves as $old => $new) {
+		foreach ($moves as $old => $new) {
 			if (is_dir($old)) {
 				$this->out(__d('cake_console', 'Moving %s to %s', $old, $new));
 				if (!$this->params['dry-run']) {
 					if ($this->params['git']) {
-						exec('git mv -f ' . escapeshellarg($old) . ' ' . escapeshellarg($new));
+						exec('git mv -f ' . escapeshellarg($old) . ' ' . escapeshellarg($old . '__'));
+						exec('git mv -f ' . escapeshellarg($old . '__') . ' ' . escapeshellarg($new));
 					} else {
 						$Folder = new Folder($old);
 						$Folder->move($new);
@@ -164,32 +171,36 @@ class UpgradeShell extends Shell {
 				}
 			}
 		}
+
+		$this->_moveViewFiles();
+		$this->_moveAppClasses();
+
 		$sourceDirs = array(
 			'.' => array('recursive' => false),
 			'Console',
-			'Controller',
 			'controllers',
+			'Controller',
 			'Lib' => array('checkFolder' => false),
-			'Model',
 			'models',
-			'Test' => array('regex' => '@class (\S*Test) extends CakeTestCase@'),
+			'Model',
 			'tests',
-			'View',
+			'Test' => array('regex' => '@class (\S*Test) extends CakeTestCase@'),
 			'views',
+			'View',
 			'vendors/shells',
 		);
 
 		$defaultOptions = array(
 			'recursive' => true,
 			'checkFolder' => true,
-			'regex' => '@class (\S*) .*{@i'
+			'regex' => '@class (\S*) .*(\s|\v)*{@i'
 		);
-		foreach($sourceDirs as $dir => $options) {
+		foreach ($sourceDirs as $dir => $options) {
 			if (is_numeric($dir)) {
 				$dir = $options;
 				$options = array();
 			}
-			$options = array_merge($defaultOptions, $options);
+			$options += $defaultOptions;
 			$this->_movePhpFiles($dir, $options);
 		}
 	}
@@ -205,22 +216,28 @@ class UpgradeShell extends Shell {
 		$this->_paths = array_diff(App::path('views'), App::core('views'));
 
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = array(App::pluginPath($this->params['plugin']) . 'views' . DS);
+			$this->_paths = array(CakePlugin::path($this->params['plugin']) . 'views' . DS);
 		}
 
 		$patterns = array();
+		App::build(array(
+			'View/Helper' => App::core('View/Helper'),
+		), App::APPEND);
 		$helpers = App::objects('helper');
 		$plugins = App::objects('plugin');
 		$pluginHelpers = array();
 		foreach ($plugins as $plugin) {
+			CakePlugin::load($plugin);
 			$pluginHelpers = array_merge(
 				$pluginHelpers,
-				App::objects('helper', App::pluginPath($plugin) . DS . 'views' . DS . 'helpers' . DS, false)
+				App::objects('helper', CakePlugin::path($plugin) . DS . 'views' . DS . 'helpers' . DS, false)
 			);
 		}
 		$helpers = array_merge($pluginHelpers, $helpers);
 		foreach ($helpers as $helper) {
-			$oldHelper = strtolower(substr($helper, 0, 1)).substr($helper, 1);
+			$helper = preg_replace('/Helper$/', '', $helper);
+			$oldHelper = $helper;
+			$oldHelper{0} = strtolower($oldHelper{0});
 			$patterns[] = array(
 				"\${$oldHelper} to \$this->{$helper}",
 				"/\\\${$oldHelper}->/",
@@ -244,7 +261,7 @@ class UpgradeShell extends Shell {
 			APP
 		);
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = array(App::pluginPath($this->params['plugin']));
+			$this->_paths = array(CakePlugin::path($this->params['plugin']));
 		}
 
 		$patterns = array(
@@ -283,7 +300,7 @@ class UpgradeShell extends Shell {
 			APP
 		);
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = array(App::pluginPath($this->params['plugin']));
+			$this->_paths = array(CakePlugin::path($this->params['plugin']));
 		}
 		$patterns = array(
 			array(
@@ -338,10 +355,10 @@ class UpgradeShell extends Shell {
 		$this->_paths = array_merge($views, $controllers, $components);
 
 		if (!empty($this->params['plugin'])) {
-			$pluginPath = App::pluginPath($this->params['plugin']);
+			$pluginPath = CakePlugin::path($this->params['plugin']);
 			$this->_paths = array(
 				$pluginPath . 'controllers' . DS,
-				$pluginPath . 'controllers' . DS . 'components' .DS,
+				$pluginPath . 'controllers' . DS . 'components' . DS,
 				$pluginPath . 'views' . DS,
 			);
 		}
@@ -376,6 +393,11 @@ class UpgradeShell extends Shell {
 				'/(\$this->action\b(?!\())/',
 				'$this->request->action'
 			),
+			array(
+				'$this->request->onlyAllow() -> $this->request->allowMethod()',
+				'/\$this->request->onlyAllow\(/',
+				'$this->request->allowMethod('
+			)
 		);
 		$this->_filesRegexpUpdate($patterns);
 	}
@@ -390,7 +412,7 @@ class UpgradeShell extends Shell {
 			APP
 		);
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = array(App::pluginPath($this->params['plugin']));
+			$this->_paths = array(CakePlugin::path($this->params['plugin']));
 		}
 		$patterns = array(
 			array(
@@ -412,7 +434,7 @@ class UpgradeShell extends Shell {
 			APP
 		);
 		if (!empty($this->params['plugin'])) {
-			$this->_paths = array(App::pluginPath($this->params['plugin']));
+			$this->_paths = array(CakePlugin::path($this->params['plugin']));
 		}
 		$patterns = array(
 			array(
@@ -485,9 +507,32 @@ class UpgradeShell extends Shell {
 	}
 
 /**
+ * Update controller redirects.
+ *
+ * - Make redirect statements return early.
+ *
+ * @return void
+ */
+	public function controller_redirects() {
+		$this->_paths = App::Path('Controller');
+		if (!empty($this->params['plugin'])) {
+			$this->_paths = App::Path('Controller', $this->params['plugin']);
+		}
+		$patterns = array(
+			array(
+				'$this->redirect() to return $this->redirect()',
+				'/\t\$this-\>redirect\(/',
+				"\t" . 'return $this->redirect('
+			),
+		);
+
+		$this->_filesRegexpUpdate($patterns);
+	}
+
+/**
  * Update components.
  *
- * - Make components that extend Object to extend Component.
+ * - Make components that extend CakeObject to extend Component.
  *
  * @return void
  */
@@ -502,8 +547,52 @@ class UpgradeShell extends Shell {
 				'/([a-zA-Z]*Component extends) Object/',
 				'\1 Component'
 			),
+			array(
+				'*Component extends CakeObject to *Component extends Component',
+				'/([a-zA-Z]*Component extends) CakeObject/',
+				'\1 Component'
+			),
 		);
 
+		$this->_filesRegexpUpdate($patterns);
+	}
+
+/**
+ * Replace cakeError with built-in exceptions.
+ * NOTE: this ignores calls where you've passed your own secondary parameters to cakeError().
+ *
+ * @return void
+ */
+	public function exceptions() {
+		$controllers = array_diff(App::path('controllers'), App::core('controllers'), array(APP));
+		$components = array_diff(App::path('components'), App::core('components'));
+
+		$this->_paths = array_merge($controllers, $components);
+
+		if (!empty($this->params['plugin'])) {
+			$pluginPath = CakePlugin::path($this->params['plugin']);
+			$this->_paths = array(
+				$pluginPath . 'controllers' . DS,
+				$pluginPath . 'controllers' . DS . 'components' . DS,
+			);
+		}
+		$patterns = array(
+			array(
+				'$this->cakeError("error400") -> throw new BadRequestException()',
+				'/(\$this->cakeError\(["\']error400["\']\));/',
+				'throw new BadRequestException();'
+			),
+			array(
+				'$this->cakeError("error404") -> throw new NotFoundException()',
+				'/(\$this->cakeError\(["\']error404["\']\));/',
+				'throw new NotFoundException();'
+			),
+			array(
+				'$this->cakeError("error500") -> throw new InternalErrorException()',
+				'/(\$this->cakeError\(["\']error500["\']\));/',
+				'throw new InternalErrorException();'
+			),
+		);
 		$this->_filesRegexpUpdate($patterns);
 	}
 
@@ -515,23 +604,27 @@ class UpgradeShell extends Shell {
  * @return void
  */
 	protected function _moveViewFiles() {
-		if (!is_dir('views')) {
+		if (!is_dir('View')) {
 			return;
 		}
 
-		$dirs = scandir('views');
+		$dirs = scandir('View');
 		foreach ($dirs as $old) {
-			if (!is_dir('views' . DS . $old) || $old === '.' || $old === '..') {
+			if (!is_dir('View' . DS . $old) || $old === '.' || $old === '..') {
 				continue;
 			}
 
 			$new = 'View' . DS . Inflector::camelize($old);
-			$old = 'views' . DS . $old;
+			$old = 'View' . DS . $old;
+			if ($new === $old) {
+				continue;
+			}
 
 			$this->out(__d('cake_console', 'Moving %s to %s', $old, $new));
 			if (!$this->params['dry-run']) {
 				if ($this->params['git']) {
-					exec('git mv -f ' . escapeshellarg($old) . ' ' . escapeshellarg($new));
+					exec('git mv -f ' . escapeshellarg($old) . ' ' . escapeshellarg($old . '__'));
+					exec('git mv -f ' . escapeshellarg($old . '__') . ' ' . escapeshellarg($new));
 				} else {
 					$Folder = new Folder($old);
 					$Folder->move($new);
@@ -541,13 +634,42 @@ class UpgradeShell extends Shell {
 	}
 
 /**
+ * Move the AppController, and AppModel classes.
+ *
+ * @return void
+ */
+	protected function _moveAppClasses() {
+		$files = array(
+			APP . 'app_controller.php' => APP . 'Controller' . DS . 'AppController.php',
+			APP . 'controllers' . DS . 'app_controller.php' => APP . 'Controller' . DS . 'AppController.php',
+			APP . 'app_model.php' => APP . 'Model' . DS . 'AppModel.php',
+			APP . 'models' . DS . 'app_model.php' => APP . 'Model' . DS . 'AppModel.php',
+		);
+		foreach ($files as $old => $new) {
+			if (file_exists($old)) {
+				$this->out(__d('cake_console', 'Moving %s to %s', $old, $new));
+
+				if ($this->params['dry-run']) {
+					continue;
+				}
+				if ($this->params['git']) {
+					exec('git mv -f ' . escapeshellarg($old) . ' ' . escapeshellarg($old . '__'));
+					exec('git mv -f ' . escapeshellarg($old . '__') . ' ' . escapeshellarg($new));
+				} else {
+					rename($old, $new);
+				}
+			}
+		}
+	}
+
+/**
  * Move application php files to where they now should be
  *
- * Find all php files in the folder (honoring recursive) and determine where cake expects the file to be
- * If the file is not exactly where cake expects it - move it.
+ * Find all php files in the folder (honoring recursive) and determine where CakePHP expects the file to be
+ * If the file is not exactly where CakePHP expects it - move it.
  *
- * @param mixed $path
- * @param mixed $options array(recursive, checkFolder)
+ * @param string $path The path to move files in.
+ * @param array $options array(recursive, checkFolder)
  * @return void
  */
 	protected function _movePhpFiles($path, $options) {
@@ -563,7 +685,7 @@ class UpgradeShell extends Shell {
 			$this->_findFiles('php');
 		} else {
 			$this->_files = scandir($path);
-			foreach($this->_files as $i => $file) {
+			foreach ($this->_files as $i => $file) {
 				if (strlen($file) < 5 || substr($file, -4) !== '.php') {
 					unset($this->_files[$i]);
 				}
@@ -620,7 +742,8 @@ class UpgradeShell extends Shell {
 			$this->out(__d('cake_console', 'Moving %s to %s', $file, $new), 1, Shell::VERBOSE);
 			if (!$this->params['dry-run']) {
 				if ($this->params['git']) {
-					exec('git mv -f ' . escapeshellarg($file) . ' ' . escapeshellarg($new));
+					exec('git mv -f ' . escapeshellarg($file) . ' ' . escapeshellarg($file . '__'));
+					exec('git mv -f ' . escapeshellarg($file . '__') . ' ' . escapeshellarg($new));
 				} else {
 					rename($file, $new);
 				}
@@ -647,15 +770,15 @@ class UpgradeShell extends Shell {
 /**
  * Searches the paths and finds files based on extension.
  *
- * @param string $extensions
+ * @param string $extensions The extensions to include. Defaults to none.
  * @return void
  */
 	protected function _findFiles($extensions = '') {
+		$this->_files = array();
 		foreach ($this->_paths as $path) {
 			if (!is_dir($path)) {
 				continue;
 			}
-			$this->_files = array();
 			$Iterator = new RegexIterator(
 				new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path)),
 				'/^.+\.(' . $extensions . ')$/i',
@@ -691,11 +814,13 @@ class UpgradeShell extends Shell {
 	}
 
 /**
- * get the option parser
+ * Gets the option parser instance and configures it.
  *
  * @return ConsoleOptionParser
  */
 	public function getOptionParser() {
+		$parser = parent::getOptionParser();
+
 		$subcommandParser = array(
 			'options' => array(
 				'plugin' => array(
@@ -712,7 +837,7 @@ class UpgradeShell extends Shell {
 					'help' => __d('cake_console', 'Use git command for moving files around.'),
 					'boolean' => true
 				),
-				'dry-run'=> array(
+				'dry-run' => array(
 					'short' => 'd',
 					'help' => __d('cake_console', 'Dry run the update, no files will actually be modified.'),
 					'boolean' => true
@@ -720,48 +845,49 @@ class UpgradeShell extends Shell {
 			)
 		);
 
-		return parent::getOptionParser()
-			->description(__d('cake_console', "A shell to help automate upgrading from CakePHP 1.3 to 2.0. \n" .
-				"Be sure to have a backup of your application before running these commands."))
-			->addSubcommand('all', array(
-				'help' => __d('cake_console', 'Run all upgrade commands.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('tests', array(
-				'help' => __d('cake_console', 'Update tests class names to FooTest rather than FooTestCase.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('locations', array(
-				'help' => __d('cake_console', 'Move files and folders to their new homes.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('i18n', array(
-				'help' => __d('cake_console', 'Update the i18n translation method calls.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('helpers', array(
-				'help' => __d('cake_console', 'Update calls to helpers.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('basics', array(
-				'help' => __d('cake_console', 'Update removed basics functions to PHP native functions.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('request', array(
-				'help' => __d('cake_console', 'Update removed request access, and replace with $this->request.'),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('configure', array(
-				'help' => __d('cake_console', "Update Configure::read() to Configure::read('debug')"),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('constants', array(
-				'help' => __d('cake_console', "Replace Obsolete constants"),
-				'parser' => $subcommandParser
-			))
-			->addSubcommand('components', array(
-				'help' => __d('cake_console', 'Update components to extend Component class.'),
-				'parser' => $subcommandParser
-			));
+		$parser->description(
+			__d('cake_console', "A tool to help automate upgrading an application or plugin " .
+			"from CakePHP 1.3 to 2.0. Be sure to have a backup of your application before " .
+			"running these commands."
+		))->addSubcommand('all', array(
+			'help' => __d('cake_console', 'Run all upgrade commands.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('tests', array(
+			'help' => __d('cake_console', 'Update tests class names to FooTest rather than FooTestCase.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('locations', array(
+			'help' => __d('cake_console', 'Move files and folders to their new homes.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('i18n', array(
+			'help' => __d('cake_console', 'Update the i18n translation method calls.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('helpers', array(
+			'help' => __d('cake_console', 'Update calls to helpers.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('basics', array(
+			'help' => __d('cake_console', 'Update removed basics functions to PHP native functions.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('request', array(
+			'help' => __d('cake_console', 'Update removed request access, and replace with $this->request.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('configure', array(
+			'help' => __d('cake_console', "Update Configure::read() to Configure::read('debug')"),
+			'parser' => $subcommandParser
+		))->addSubcommand('constants', array(
+			'help' => __d('cake_console', "Replace Obsolete constants"),
+			'parser' => $subcommandParser
+		))->addSubcommand('controller_redirects', array(
+			'help' => __d('cake_console', 'Return early on controller redirect calls.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('components', array(
+			'help' => __d('cake_console', 'Update components to extend Component class.'),
+			'parser' => $subcommandParser
+		))->addSubcommand('exceptions', array(
+			'help' => __d('cake_console', 'Replace use of cakeError with exceptions.'),
+			'parser' => $subcommandParser
+		));
+
+		return $parser;
 	}
+
 }

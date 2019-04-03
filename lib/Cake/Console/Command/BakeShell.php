@@ -6,29 +6,33 @@
  * application development by writing fully functional skeleton controllers,
  * models, and views. Going further, Bake can also write Unit Tests for you.
  *
- * PHP 5
- *
  * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  * @link          http://cakephp.org CakePHP(tm) Project
  * @since         CakePHP(tm) v 1.2.0.5012
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
+App::uses('AppShell', 'Console/Command');
 App::uses('Model', 'Model');
 
 /**
- * Bake is a command-line code generation utility for automating programmer chores.
+ * Command-line code generation utility to automate programmer chores.
+ *
+ * Bake is CakePHP's code generation script, which can help you kickstart
+ * application development by writing fully functional skeleton controllers,
+ * models, and views. Going further, Bake can also write Unit Tests for you.
  *
  * @package       Cake.Console.Command
  * @link          http://book.cakephp.org/2.0/en/console-and-shells/code-generation-with-bake.html
  */
-class BakeShell extends Shell {
+class BakeShell extends AppShell {
 
 /**
  * Contains tasks to load and instantiate
@@ -59,6 +63,9 @@ class BakeShell extends Shell {
 			if (isset($this->params['connection'])) {
 				$this->{$task}->connection = $this->params['connection'];
 			}
+		}
+		if (isset($this->params['connection'])) {
+			$this->connection = $this->params['connection'];
 		}
 	}
 
@@ -117,8 +124,7 @@ class BakeShell extends Shell {
 				$this->Test->execute();
 				break;
 			case 'Q':
-				exit(0);
-				break;
+				return $this->_stop();
 			default:
 				$this->out(__d('cake_console', 'You have made an invalid selection. Please choose a type of class to Bake by entering D, M, V, F, T, or C.'));
 		}
@@ -184,7 +190,7 @@ class BakeShell extends Shell {
 			}
 			App::uses($controller . 'Controller', 'Controller');
 			if (class_exists($controller . 'Controller')) {
-				$this->View->args = array($controller);
+				$this->View->args = array($name);
 				$this->View->execute();
 			}
 			$this->out('', 1, Shell::QUIET);
@@ -197,18 +203,19 @@ class BakeShell extends Shell {
 	}
 
 /**
- * get the option parser.
+ * Gets the option parser instance and configures it.
  *
- * @return void
+ * @return ConsoleOptionParser
  */
 	public function getOptionParser() {
 		$parser = parent::getOptionParser();
-		return $parser->description(__d('cake_console',
-			'The Bake script generates controllers, views and models for your application.'
-			. ' If run with no command line arguments, Bake guides the user through the class creation process.'
-			. ' You can customize the generation process by telling Bake where different parts of your application are using command line arguments.'
-		))->addSubcommand('all', array(
-			'help' => __d('cake_console', 'Bake a complete MVC. optional <name> of a Model'),
+
+		$parser->description(
+			__d('cake_console',	'The Bake script generates controllers, views and models for your application.' .
+			' If run with no command line arguments, Bake guides the user through the class creation process.' .
+			' You can customize the generation process by telling Bake where different parts of your application are using command line arguments.')
+		)->addSubcommand('all', array(
+			'help' => __d('cake_console', 'Bake a complete MVC. optional <name> of a Model')
 		))->addSubcommand('project', array(
 			'help' => __d('cake_console', 'Bake a new app folder in the path supplied or in current directory if no path is specified'),
 			'parser' => $this->Project->getOptionParser()
@@ -237,7 +244,12 @@ class BakeShell extends Shell {
 			'help' => __d('cake_console', 'Database connection to use in conjunction with `bake all`.'),
 			'short' => 'c',
 			'default' => 'default'
+		))->addOption('theme', array(
+			'short' => 't',
+			'help' => __d('cake_console', 'Theme to use when baking code.')
 		));
+
+		return $parser;
 	}
 
 }

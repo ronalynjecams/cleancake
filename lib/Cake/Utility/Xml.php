@@ -4,21 +4,29 @@
  *
  * The methods in these classes enable the datasources that use XML to work.
  *
- * PHP 5
- *
  * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  * @link          http://cakephp.org CakePHP(tm) Project
  * @package       Cake.Utility
  * @since         CakePHP v .0.10.3.1400
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
+App::uses('HttpSocket', 'Network/Http');
+
+/**
+ * XML handling for CakePHP.
+ *
+ * The methods in these classes enable the datasources that use XML to work.
+ *
+ * @package       Cake.Utility
+ */
 class Xml {
 
 /**
@@ -44,7 +52,7 @@ class Xml {
  *
  * Building from an array:
  *
- * {{{
+ * ```
  * 	$value = array(
  * 		'tags' => array(
  * 			'tag' => array(
@@ -60,16 +68,23 @@ class Xml {
  * 		)
  * 	);
  * $xml = Xml::build($value);
- * }}}
+ * ```
  *
  * When building XML from an array ensure that there is only one top level element.
  *
  * ### Options
  *
  * - `return` Can be 'simplexml' to return object of SimpleXMLElement or 'domdocument' to return DOMDocument.
- * - If using array as input, you can pass `options` from Xml::fromArray.
+ * - `loadEntities` Defaults to false. Set to true to enable loading of `<!ENTITY` definitions. This
+ *   is disabled by default for security reasons.
+ * - `readFile` Set to false to disable file reading. This is important to disable when
+ *   putting user data into Xml::build(). If enabled local & remote files will be read if they exist.
+ *   Defaults to true for backwards compatibility reasons.
+ * - `parseHuge` Enable the `LIBXML_PARSEHUGE`
  *
- * @param mixed $input XML string, a path to a file, an URL or an array
+ * If using array as input, you can pass `options` from Xml::fromArray.
+ *
+ * @param string|array $input XML string, a path to a file, a URL or an array
  * @param array $options The options to use
  * @return SimpleXMLElement|DOMDocument SimpleXMLElement or DOMDocument
  * @throws XmlException
@@ -79,26 +94,30 @@ class Xml {
 			$options = array('return' => (string)$options);
 		}
 		$defaults = array(
-			'return' => 'simplexml'
+			'return' => 'simplexml',
+			'loadEntities' => false,
+			'readFile' => true,
+			'parseHuge' => true
 		);
-		$options = array_merge($defaults, $options);
+		$options += $defaults;
 
 		if (is_array($input) || is_object($input)) {
-			return self::fromArray((array)$input, $options);
+			return static::fromArray((array)$input, $options);
 		} elseif (strpos($input, '<') !== false) {
-			if ($options['return'] === 'simplexml' || $options['return'] === 'simplexmlelement') {
-				return new SimpleXMLElement($input, LIBXML_NOCDATA);
+			return static::_loadXml($input, $options);
+		} elseif ($options['readFile'] && file_exists($input)) {
+			return static::_loadXml(file_get_contents($input), $options);
+		} elseif ($options['readFile'] && strpos($input, 'http://') === 0 || strpos($input, 'https://') === 0) {
+			try {
+				$socket = new HttpSocket(array('request' => array('redirect' => 10)));
+				$response = $socket->get($input);
+				if (!$response->isOk()) {
+					throw new XmlException(__d('cake_dev', 'XML cannot be read.'));
+				}
+				return static::_loadXml($response->body, $options);
+			} catch (SocketException $e) {
+				throw new XmlException(__d('cake_dev', 'XML cannot be read.'));
 			}
-			$dom = new DOMDocument();
-			$dom->loadXML($input);
-			return $dom;
-		} elseif (file_exists($input) || strpos($input, 'http://') === 0 || strpos($input, 'https://') === 0) {
-			if ($options['return'] === 'simplexml' || $options['return'] === 'simplexmlelement') {
-				return new SimpleXMLElement($input, LIBXML_NOCDATA, true);
-			}
-			$dom = new DOMDocument();
-			$dom->load($input);
-			return $dom;
 		} elseif (!is_string($input)) {
 			throw new XmlException(__d('cake_dev', 'Invalid input.'));
 		}
@@ -106,18 +125,57 @@ class Xml {
 	}
 
 /**
+ * Parse the input data and create either a SimpleXmlElement object or a DOMDocument.
+ *
+ * @param string $input The input to load.
+ * @param array $options The options to use. See Xml::build()
+ * @return SimpleXmlElement|DOMDocument
+ * @throws XmlException
+ */
+	protected static function _loadXml($input, $options) {
+		$hasDisable = function_exists('libxml_disable_entity_loader');
+		$internalErrors = libxml_use_internal_errors(true);
+		if ($hasDisable && !$options['loadEntities']) {
+			libxml_disable_entity_loader(true);
+		}
+		$flags = LIBXML_NOCDATA;
+		if (!empty($options['parseHuge'])) {
+			$flags |= LIBXML_PARSEHUGE;
+		}
+		try {
+			if ($options['return'] === 'simplexml' || $options['return'] === 'simplexmlelement') {
+				$xml = new SimpleXMLElement($input, LIBXML_NOCDATA);
+			} else {
+				$xml = new DOMDocument();
+				$xml->loadXML($input);
+			}
+		} catch (Exception $e) {
+			$xml = null;
+		}
+		if ($hasDisable && !$options['loadEntities']) {
+			libxml_disable_entity_loader(false);
+		}
+		libxml_use_internal_errors($internalErrors);
+		if ($xml === null) {
+			throw new XmlException(__d('cake_dev', 'Xml cannot be read.'));
+		}
+		return $xml;
+	}
+
+/**
  * Transform an array into a SimpleXMLElement
  *
  * ### Options
  *
- * - `format` If create childs ('tags') or attributes ('attribute').
+ * - `format` If create childs ('tags') or attributes ('attributes').
+ * - `pretty` Returns formatted Xml when set to `true`. Defaults to `false`
  * - `version` Version of XML document. Default is 1.0.
  * - `encoding` Encoding of XML document. If null remove from XML header. Default is the some of application.
  * - `return` If return object of SimpleXMLElement ('simplexml') or DOMDocument ('domdocument'). Default is SimpleXMLElement.
  *
  * Using the following data:
  *
- * {{{
+ * ```
  * $value = array(
  *    'root' => array(
  *        'tag' => array(
@@ -127,13 +185,13 @@ class Xml {
  *         )
  *     )
  * );
- * }}}
+ * ```
  *
  * Calling `Xml::fromArray($value, 'tags');`  Will generate:
  *
  * `<root><tag><id>1</id><value>defect</value>description</tag></root>`
  *
- * And calling `Xml::fromArray($value, 'attribute');` Will generate:
+ * And calling `Xml::fromArray($value, 'attributes');` Will generate:
  *
  * `<root><tag id="1" value="defect">description</tag></root>`
  *
@@ -147,7 +205,7 @@ class Xml {
 			throw new XmlException(__d('cake_dev', 'Invalid input.'));
 		}
 		$key = key($input);
-		if (is_integer($key)) {
+		if (is_int($key)) {
 			throw new XmlException(__d('cake_dev', 'The key of input must be alphanumeric'));
 		}
 
@@ -158,12 +216,16 @@ class Xml {
 			'format' => 'tags',
 			'version' => '1.0',
 			'encoding' => Configure::read('App.encoding'),
-			'return' => 'simplexml'
+			'return' => 'simplexml',
+			'pretty' => false
 		);
-		$options = array_merge($defaults, $options);
+		$options += $defaults;
 
 		$dom = new DOMDocument($options['version'], $options['encoding']);
-		self::_fromArray($dom, $dom, $input, $options['format']);
+		if ($options['pretty']) {
+			$dom->formatOutput = true;
+		}
+		static::_fromArray($dom, $dom, $input, $options['format']);
 
 		$options['return'] = strtolower($options['return']);
 		if ($options['return'] === 'simplexml' || $options['return'] === 'simplexmlelement') {
@@ -177,8 +239,8 @@ class Xml {
  *
  * @param DOMDocument $dom Handler to DOMDocument
  * @param DOMElement $node Handler to DOMElement (child)
- * @param array $data Array of data to append to the $node.
- * @param string $format Either 'attribute' or 'tags'.  This determines where nested keys go.
+ * @param array &$data Array of data to append to the $node.
+ * @param string $format Either 'attributes' or 'tags'. This determines where nested keys go.
  * @return void
  * @throws XmlException
  */
@@ -200,7 +262,16 @@ class Xml {
 						continue;
 					}
 					if ($key[0] !== '@' && $format === 'tags') {
-						$child = $dom->createElement($key, $value);
+						$child = null;
+						if (!is_numeric($value)) {
+							// Escape special characters
+							// http://www.w3.org/TR/REC-xml/#syntax
+							// https://bugs.php.net/bug.php?id=36795
+							$child = $dom->createElement($key, '');
+							$child->appendChild(new DOMText($value));
+						} else {
+							$child = $dom->createElement($key, $value);
+						}
 						$node->appendChild($child);
 					} else {
 						if ($key[0] === '@') {
@@ -214,14 +285,14 @@ class Xml {
 					if ($key[0] === '@') {
 						throw new XmlException(__d('cake_dev', 'Invalid array'));
 					}
-					if (array_keys($value) === range(0, count($value) - 1)) { // List
+					if (is_numeric(implode('', array_keys($value)))) { // List
 						foreach ($value as $item) {
-							$data = compact('dom', 'node', 'key', 'format');
-							$data['value'] = $item;
-							self::_createChild($data);
+							$itemData = compact('dom', 'node', 'key', 'format');
+							$itemData['value'] = $item;
+							static::_createChild($itemData);
 						}
 					} else { // Struct
-						self::_createChild(compact('dom', 'node', 'key', 'value', 'format'));
+						static::_createChild(compact('dom', 'node', 'key', 'value', 'format'));
 					}
 				}
 			} else {
@@ -248,25 +319,24 @@ class Xml {
 				$childNS = $value['xmlns:'];
 				unset($value['xmlns:']);
 			}
-		} elseif (!empty($value) || $value === 0) {
+		} elseif (!empty($value) || $value === 0 || $value === '0') {
 			$childValue = (string)$value;
 		}
 
-		if ($childValue) {
-			$child = $dom->createElement($key, $childValue);
-		} else {
-			$child = $dom->createElement($key);
+		$child = $dom->createElement($key);
+		if ($childValue !== null) {
+			$child->appendChild($dom->createTextNode($childValue));
 		}
 		if ($childNS) {
 			$child->setAttribute('xmlns', $childNS);
 		}
 
-		self::_fromArray($dom, $child, $value, $format);
+		static::_fromArray($dom, $child, $value, $format);
 		$node->appendChild($child);
 	}
 
 /**
- * Returns this XML structure as a array.
+ * Returns this XML structure as an array.
  *
  * @param SimpleXMLElement|DOMDocument|DOMNode $obj SimpleXMLElement, DOMDocument or DOMNode instance
  * @return array Array representation of the XML structure.
@@ -281,7 +351,7 @@ class Xml {
 		}
 		$result = array();
 		$namespaces = array_merge(array('' => ''), $obj->getNamespaces(true));
-		self::_toArray($obj, $result, '', array_keys($namespaces));
+		static::_toArray($obj, $result, '', array_keys($namespaces));
 		return $result;
 	}
 
@@ -289,7 +359,7 @@ class Xml {
  * Recursive method to toArray
  *
  * @param SimpleXMLElement $xml SimpleXMLElement object
- * @param array $parentData Parent array with data
+ * @param array &$parentData Parent array with data
  * @param string $ns Namespace of current child
  * @param array $namespaces List of namespaces in XML
  * @return void
@@ -306,14 +376,14 @@ class Xml {
 			}
 
 			foreach ($xml->children($namespace, true) as $child) {
-				self::_toArray($child, $data, $namespace, $namespaces);
+				static::_toArray($child, $data, $namespace, $namespaces);
 			}
 		}
 
 		$asString = trim((string)$xml);
 		if (empty($data)) {
 			$data = $asString;
-		} elseif (!empty($asString)) {
+		} elseif (strlen($asString) > 0) {
 			$data['@'] = $asString;
 		}
 

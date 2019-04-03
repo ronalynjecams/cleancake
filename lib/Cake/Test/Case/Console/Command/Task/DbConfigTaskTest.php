@@ -2,19 +2,18 @@
 /**
  * DBConfigTask Test Case
  *
- * PHP 5
- *
  * CakePHP(tm) : Rapid Development Framework (http://cakephp.org)
- * Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  * @link          http://cakephp.org CakePHP(tm) Project
  * @package       Cake.Test.Case.Console.Command.Task
  * @since         CakePHP(tm) v 1.3
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
 App::uses('ShellDispatcher', 'Console');
@@ -31,7 +30,7 @@ App::uses('DbConfigTask', 'Console/Command/Task');
 class DbConfigTaskTest extends CakeTestCase {
 
 /**
- * setup method
+ * setUp method
  *
  * @return void
  */
@@ -40,7 +39,7 @@ class DbConfigTaskTest extends CakeTestCase {
 		$out = $this->getMock('ConsoleOutput', array(), array(), '', false);
 		$in = $this->getMock('ConsoleInput', array(), array(), '', false);
 
-		$this->Task = $this->getMock('DbConfigTask', 
+		$this->Task = $this->getMock('DbConfigTask',
 			array('in', 'out', 'err', 'hr', 'createFile', '_stop', '_checkUnitTest', '_verify'),
 			array($out, $out, $in)
 		);
@@ -49,7 +48,7 @@ class DbConfigTaskTest extends CakeTestCase {
 	}
 
 /**
- * endTest method
+ * tearDown method
  *
  * @return void
  */
@@ -101,7 +100,7 @@ class DbConfigTaskTest extends CakeTestCase {
 		$this->Task->expects($this->once())->method('_stop');
 		$this->Task->expects($this->at(0))->method('in')->will($this->returnValue('default')); //name
 		$this->Task->expects($this->at(1))->method('in')->will($this->returnValue('mysql')); //db type
-		$this->Task->expects($this->at(2))->method('in')->will($this->returnValue('n')); //persistant
+		$this->Task->expects($this->at(2))->method('in')->will($this->returnValue('n')); //persistent
 		$this->Task->expects($this->at(3))->method('in')->will($this->returnValue('localhost')); //server
 		$this->Task->expects($this->at(4))->method('in')->will($this->returnValue('n')); //port
 		$this->Task->expects($this->at(5))->method('in')->will($this->returnValue('root')); //user
@@ -115,7 +114,7 @@ class DbConfigTaskTest extends CakeTestCase {
 			->with(array(
 				array(
 					'name' => 'default',
-					'driver' => 'mysql',
+					'datasource' => 'mysql',
 					'persistent' => 'false',
 					'host' => 'localhost',
 					'login' => 'root',
@@ -128,6 +127,6 @@ class DbConfigTaskTest extends CakeTestCase {
 				)
 			));
 
-		$result = $this->Task->execute();
+		$this->Task->execute();
 	}
 }

@@ -2,23 +2,27 @@
 /**
  * ConsoleOutputTest file
  *
- * PHP 5
- *
- * CakePHP(tm) Tests <http://book.cakephp.org/view/1196/Testing>
- * Copyright 2005-2011, Cake Software Foundation, Inc.
+ * CakePHP(tm) Tests <http://book.cakephp.org/2.0/en/development/testing.html>
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc.
- * @link          http://book.cakephp.org/view/1196/Testing CakePHP(tm) Tests
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
+ * @link          http://book.cakephp.org/2.0/en/development/testing.html CakePHP(tm) Tests
  * @package       Cake.Test.Case.Console
  * @since         CakePHP(tm) v 1.2.0.5432
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
 App::uses('ConsoleOutput', 'Console');
 
+/**
+ * ConsoleOutputTest
+ *
+ * @package       Cake.Test.Case.Console
+ */
 class ConsoleOutputTest extends CakeTestCase {
 
 /**
@@ -38,6 +42,7 @@ class ConsoleOutputTest extends CakeTestCase {
  * @return void
  */
 	public function tearDown() {
+		parent::tearDown();
 		unset($this->output);
 	}
 
@@ -90,6 +95,27 @@ class ConsoleOutputTest extends CakeTestCase {
 	}
 
 /**
+ * test writing an array of messages.
+ *
+ * @return void
+ */
+	public function testOverwrite() {
+		$testString = "Text";
+
+		$this->output->expects($this->at(0))->method('_write')
+			->with($testString);
+
+		$this->output->expects($this->at(1))->method('_write')
+			->with("");
+
+		$this->output->expects($this->at(2))->method('_write')
+			->with("Overwriting text");
+
+		$this->output->write($testString, 0);
+		$this->output->overwrite("Overwriting text");
+	}
+
+/**
  * test getting a style.
  *
  * @return void
@@ -97,7 +123,7 @@ class ConsoleOutputTest extends CakeTestCase {
 	public function testStylesGet() {
 		$result = $this->output->styles('error');
 		$expected = array('text' => 'red', 'underline' => true);
-		$this->assertEqual($expected, $result);
+		$this->assertEquals($expected, $result);
 
 		$this->assertNull($this->output->styles('made_up_goop'));
 
@@ -224,5 +250,29 @@ class ConsoleOutputTest extends CakeTestCase {
 			->with('Bad Regular');
 
 		$this->output->write('<error>Bad</error> Regular', false);
+	}
+
+/**
+ * test plain output when php://output, as php://output is
+ * not compatible with posix_ functions.
+ *
+ * @return void
+ */
+	public function testOutputAsPlainWhenOutputStream() {
+		$output = $this->getMock('ConsoleOutput', array('_write'), array('php://output'));
+		$this->assertEquals(ConsoleOutput::PLAIN, $output->outputAs());
+	}
+
+/**
+ * test plain output only strips tags used for formatting.
+ *
+ * @return void
+ */
+	public function testOutputAsPlainSelectiveTagRemoval() {
+		$this->output->outputAs(ConsoleOutput::PLAIN);
+		$this->output->expects($this->once())->method('_write')
+			->with('Bad Regular <b>Left</b> <i>behind</i> <name>');
+
+		$this->output->write('<error>Bad</error> Regular <b>Left</b> <i>behind</i> <name>', false);
 	}
 }

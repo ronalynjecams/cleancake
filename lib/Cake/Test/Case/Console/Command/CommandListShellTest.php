@@ -2,36 +2,48 @@
 /**
  * CommandListShellTest file
  *
- * PHP 5
- *
  * CakePHP :  Rapid Development Framework (http://cakephp.org)
- * Copyright 2005-2011, Cake Software Foundation, Inc.
+ * Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  *
  * Licensed under The MIT License
+ * For full copyright and license information, please see the LICENSE.txt
  * Redistributions of files must retain the above copyright notice.
  *
- * @copyright     Copyright 2005-2011, Cake Software Foundation, Inc.
+ * @copyright     Copyright (c) Cake Software Foundation, Inc. (http://cakefoundation.org)
  * @link          http://cakephp.org CakePHP Project
  * @package       Cake.Test.Case.Console.Command
  * @since         CakePHP v 2.0
- * @license       MIT License (http://www.opensource.org/licenses/mit-license.php)
+ * @license       http://www.opensource.org/licenses/mit-license.php MIT License
  */
 
 App::uses('CommandListShell', 'Console/Command');
 App::uses('ConsoleOutput', 'Console');
 App::uses('ConsoleInput', 'Console');
 App::uses('Shell', 'Console');
+App::uses('CommandTask', 'Console/Command/Task');
 
-
+/**
+ * TestStringOutput
+ *
+ * @package       Cake.Test.Case.Console.Command
+ */
 class TestStringOutput extends ConsoleOutput {
+
 	public $output = '';
 
 	protected function _write($message) {
 		$this->output .= $message;
 	}
+
 }
 
+/**
+ * CommandListShellTest
+ *
+ * @package       Cake.Test.Case.Console.Command
+ */
 class CommandListShellTest extends CakeTestCase {
+
 /**
  * setUp method
  *
@@ -40,14 +52,14 @@ class CommandListShellTest extends CakeTestCase {
 	public function setUp() {
 		parent::setUp();
 		App::build(array(
-			'plugins' => array(
+			'Plugin' => array(
 				CAKE . 'Test' . DS . 'test_app' . DS . 'Plugin' . DS
 			),
 			'Console/Command' => array(
 				CAKE . 'Test' . DS . 'test_app' . DS . 'Console' . DS . 'Command' . DS
 			)
-		), true);
-		CakePlugin::loadAll();
+		), App::RESET);
+		CakePlugin::load(array('TestPlugin', 'TestPluginTwo'));
 
 		$out = new TestStringOutput();
 		$in = $this->getMock('ConsoleInput', array(), array(), '', false);
@@ -57,10 +69,16 @@ class CommandListShellTest extends CakeTestCase {
 			array('in', '_stop', 'clear'),
 			array($out, $out, $in)
 		);
+
+		$this->Shell->Command = $this->getMock(
+			'CommandTask',
+			array('in', '_stop', 'clear'),
+			array($out, $out, $in)
+		);
 	}
 
 /**
- * teardown
+ * tearDown
  *
  * @return void
  */
@@ -79,60 +97,17 @@ class CommandListShellTest extends CakeTestCase {
 		$this->Shell->main();
 		$output = $this->Shell->stdout->output;
 
-		$expected = "/example \[.*TestPlugin, TestPluginTwo.*\]/";
-		$this->assertPattern($expected, $output);
+		$expected = "/\[.*TestPlugin.*\] example/";
+		$this->assertRegExp($expected, $output);
 
-		$expected = "/welcome \[.*TestPluginTwo.*\]/";
-		$this->assertPattern($expected, $output);
+		$expected = "/\[.*TestPluginTwo.*\] example, welcome/";
+		$this->assertRegExp($expected, $output);
 
+		$expected = "/\[.*CORE.*\] acl, api, bake, command_list, completion, console, i18n, schema, server, test, testsuite, upgrade/";
+		$this->assertRegExp($expected, $output);
 
-		$expected = "/acl \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/api \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/bake \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/console \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/i18n \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/schema \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/testsuite \[.*CORE.*\]/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/sample \[.*app.*\]/";
-		$this->assertPattern($expected, $output);
-	}
-
-/**
- * Test the sort param
- *
- * @return void
- */
-	public function testSortPlugin() {
-		$this->Shell->params['sort'] = true;
-		$this->Shell->main();
-
-		$output = $this->Shell->stdout->output;
-
-		$expected = "/\[.*App.*\]\\v*[ ]+sample/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/\[.*TestPluginTwo.*\]\\v*[ ]+example, welcome/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/\[.*TestPlugin.*\]\\v*[ ]+example/";
-		$this->assertPattern($expected, $output);
-
-		$expected = "/\[.*Core.*\]\\v*[ ]+acl, api, bake, command_list, console, i18n, schema, testsuite/";
-		$this->assertPattern($expected, $output);
+		$expected = "/\[.*app.*\] sample/";
+		$this->assertRegExp($expected, $output);
 	}
 
 /**
@@ -146,7 +121,7 @@ class CommandListShellTest extends CakeTestCase {
 
 		$output = $this->Shell->stdout->output;
 
-		$find = '<shell name="sample" call_as="sample" provider="app" help="sample -h"/>';	
+		$find = '<shell name="sample" call_as="sample" provider="app" help="sample -h"/>';
 		$this->assertContains($find, $output);
 
 		$find = '<shell name="bake" call_as="bake" provider="CORE" help="bake -h"/>';
